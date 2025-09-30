@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-C Source Code Vulnerability Scanner - Improved Version
+C Source Code Vulnerability Scanner - CLI Entry Point
 Analyzes C source code for memory safety and security vulnerabilities
-with reduced false positives
 """
 
 import os
@@ -24,7 +23,7 @@ class VulnerabilityFinding:
     """Represents a vulnerability found in C code"""
     finding_id: str
     vulnerability_type: str
-    severity: str  # CRITICAL, HIGH, MEDIUM, LOW
+    severity: str
     confidence: float
     file_path: str
     line_number: int
@@ -157,7 +156,6 @@ class BufferOverflowDetector:
         self.findings = []
         self.buffer_sizes = self._extract_buffer_sizes()
         
-        # Dangerous functions that can cause buffer overflows
         self.unsafe_functions = {
             'strcpy': {
                 'description': 'Unsafe string copy without bounds checking',
@@ -208,14 +206,12 @@ class BufferOverflowDetector:
         buffer_sizes = {}
         
         for line in self.lines:
-            # Match: char buffer_name[SIZE]
             match = re.search(r'char\s+(\w+)\s*\[\s*(\d+)\s*\]', line)
             if match:
                 buffer_name = match.group(1)
                 size = int(match.group(2))
                 buffer_sizes[buffer_name] = size
             
-            # Match: char buffer_name[SIZE] in struct
             match = re.search(r'char\s+(\w+)\s*\[\s*(\d+)\s*\]\s*;', line)
             if match:
                 buffer_name = match.group(1)
@@ -233,23 +229,17 @@ class BufferOverflowDetector:
     
     def _detect_unsafe_function(self, func_name: str, func_info: Dict[str, str]):
         """Detect usage of unsafe function"""
-        # Pattern to match function calls
         pattern = rf'\b{func_name}\s*\('
         
         for line_num, line in enumerate(self.lines, 1):
-            # Skip comments
             if re.match(r'^\s*//', line) or re.match(r'^\s*/\*', line):
                 continue
             
             if re.search(pattern, line):
-                # Extract function context
                 function_name = self._get_enclosing_function(line_num)
                 code_snippet = self._get_code_snippet(line_num, context=2)
-                
-                # Calculate confidence based on context
                 confidence = self._calculate_confidence(func_name, line, line_num)
                 
-                # Skip if confidence is too low (likely safe)
                 if confidence < 0.5:
                     continue
                 
@@ -269,75 +259,57 @@ class BufferOverflowDetector:
     
     def _calculate_confidence(self, func_name: str, line: str, line_num: int) -> float:
         """Calculate confidence score based on context"""
-        confidence = 0.85  # Base confidence
+        confidence = 0.85
         
-        # Check if there's bounds checking nearby
         context = self._get_surrounding_lines(line_num, 3)
         
-        # Check for sizeof usage (good sign of bounds checking)
         if any('sizeof' in ctx_line for ctx_line in context):
             confidence = 0.65
         
-        # Check for strlen usage (may indicate bounds checking)
         if any('strlen' in ctx_line for ctx_line in context):
             confidence = 0.70
         
-        # gets() is always dangerous
         if func_name == 'gets':
             return 1.0
         
-        # Special handling for strcpy/strcat
         if func_name in ['strcpy', 'strcat']:
-            # Extract source argument (second argument for strcpy)
             match = re.search(rf'{func_name}\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', line)
             if match:
                 dest = match.group(1).strip()
                 src = match.group(2).strip()
                 
-                # Check if source is a string literal
                 if src.startswith('"') and src.endswith('"'):
-                    # Calculate string literal length
-                    string_content = src[1:-1]  # Remove quotes
-                    # Handle escape sequences
+                    string_content = src[1:-1]
                     string_content = string_content.replace('\\n', '\n')
                     string_content = string_content.replace('\\t', '\t')
                     string_content = string_content.replace('\\\\', '\\')
                     string_content = string_content.replace('\\"', '"')
-                    src_length = len(string_content) + 1  # +1 for null terminator
+                    src_length = len(string_content) + 1
                     
-                    # Try to find destination buffer size
-                    # Check if dest is a simple variable name
                     dest_clean = dest.strip().split('[')[0].split('.')[0].split('->')[0]
                     
-                    # Look for buffer size in declarations
                     dest_size = None
                     if dest_clean in self.buffer_sizes:
                         dest_size = self.buffer_sizes[dest_clean]
                     else:
-                        # Check for struct member access (e.g., leaderboard[i].name)
                         member_match = re.search(r'\.(\w+)$', dest) or re.search(r'->(\w+)$', dest)
                         if member_match:
                             member_name = member_match.group(1)
                             if member_name in self.buffer_sizes:
                                 dest_size = self.buffer_sizes[member_name]
                     
-                    # If we know both sizes and source fits, reduce confidence significantly
                     if dest_size is not None:
                         if src_length <= dest_size:
-                            # String literal fits safely - very low confidence (likely false positive)
                             return 0.3
                         else:
-                            # String literal is too large - definite overflow!
                             return 1.0
         
         return confidence
     
     def _get_enclosing_function(self, line_num: int) -> str:
         """Find the function containing this line"""
-        # Search backwards for function definition
         for i in range(line_num - 1, max(0, line_num - 100), -1):
             line = self.lines[i]
-            # Simple pattern for function definition
             match = re.search(r'\b(\w+)\s*\([^)]*\)\s*\{', line)
             if match:
                 return match.group(1)
@@ -372,7 +344,6 @@ class MemoryLeakDetector:
     
     def analyze(self) -> List[VulnerabilityFinding]:
         """Analyze for memory leaks"""
-        # Extract all functions
         functions = self._extract_functions()
         
         for func_name, func_lines, start_line in functions:
@@ -389,11 +360,9 @@ class MemoryLeakDetector:
         brace_count = 0
         
         for line_num, line in enumerate(self.lines, 1):
-            # Skip comments and preprocessor
             if re.match(r'^\s*(/\*|//|#)', line):
                 continue
             
-            # Detect function start
             if current_func is None:
                 match = re.search(r'\b(\w+)\s*\([^)]*\)\s*\{', line)
                 if match:
@@ -416,29 +385,22 @@ class MemoryLeakDetector:
         """Analyze a function for memory leaks"""
         func_code = '\n'.join(func_lines)
         
-        # Find all malloc/calloc/realloc calls
         alloc_pattern = r'\b(malloc|calloc|realloc)\s*\('
         free_pattern = r'\bfree\s*\('
         
         alloc_count = len(re.findall(alloc_pattern, func_code))
         free_count = len(re.findall(free_pattern, func_code))
         
-        # Check for return statements that might leak memory
         if alloc_count > 0:
-            # Find early returns after allocation
             for i, line in enumerate(func_lines):
                 if re.search(alloc_pattern, line):
-                    # Check if there's a return before free
                     remaining_code = '\n'.join(func_lines[i:])
                     
-                    # Extract variable name from allocation
                     var_match = re.search(r'(\w+)\s*=\s*(?:malloc|calloc|realloc)', line)
                     if var_match:
                         var_name = var_match.group(1)
                         
-                        # Check if variable is freed
                         if f'free({var_name})' not in remaining_code and f'free ({var_name})' not in remaining_code:
-                            # Check for early returns
                             if 'return' in remaining_code:
                                 line_num = start_line + i
                                 
@@ -456,9 +418,7 @@ class MemoryLeakDetector:
                                     cwe_id="CWE-401"
                                 ))
         
-        # Simple check: more allocations than frees
         if alloc_count > free_count and alloc_count > 0:
-            # Find first allocation line
             for i, line in enumerate(func_lines):
                 if re.search(alloc_pattern, line):
                     line_num = start_line + i
@@ -509,7 +469,6 @@ class PointerSafetyAnalyzer:
     
     def _detect_use_after_free(self):
         """Detect use-after-free vulnerabilities"""
-        # Extract all functions to analyze them separately
         functions = self._extract_functions_uaf()
         
         for func_name, func_lines, start_line in functions:
@@ -524,11 +483,9 @@ class PointerSafetyAnalyzer:
         brace_count = 0
         
         for line_num, line in enumerate(self.lines, 1):
-            # Skip comments and preprocessor
             if re.match(r'^\s*(/\*|//|#)', line):
                 continue
             
-            # Detect function start
             if current_func is None:
                 match = re.search(r'\b(\w+)\s*\([^)]*\)\s*\{', line)
                 if match:
@@ -549,33 +506,26 @@ class PointerSafetyAnalyzer:
     
     def _analyze_function_uaf(self, func_name: str, func_lines: List[Tuple[int, str]], start_line: int):
         """Analyze a single function for use-after-free bugs"""
-        freed_vars = {}  # var_name -> line_num where freed
-        malloc_vars = set()  # Track which variables came from malloc
+        freed_vars = {}
+        malloc_vars = set()
         
         for line_num, line in func_lines:
-            # Skip comments
             if re.match(r'^\s*//', line):
                 continue
             
-            # Track malloc allocations - only heap allocations, not stack arrays
             malloc_match = re.search(r'(\w+)\s*=\s*(malloc|calloc|realloc)\s*\(', line)
             if malloc_match:
                 var_name = malloc_match.group(1)
                 malloc_vars.add(var_name)
             
-            # Detect free() calls - only track if variable was malloc'd
             free_match = re.search(r'free\s*\(\s*(\w+)\s*\)', line)
             if free_match:
                 var_name = free_match.group(1)
-                # Only track if this was actually a malloc'd pointer
                 if var_name in malloc_vars:
                     freed_vars[var_name] = line_num
             
-            # Check for usage of freed variables
             for freed_var, freed_line in list(freed_vars.items()):
-                # Look for dereferences or usage after free
                 if freed_var in line and 'free' not in line:
-                    # Check if it's actual usage (not reassignment)
                     if re.search(rf'\*{freed_var}|{freed_var}\s*->', line) or \
                        re.search(rf'{freed_var}\s*\[', line) or \
                        re.search(rf'\b{freed_var}\s*\(', line):
@@ -594,29 +544,24 @@ class PointerSafetyAnalyzer:
                             cwe_id="CWE-416"
                         ))
                 
-                # Reset tracking on reassignment
                 if re.search(rf'{freed_var}\s*=', line) and 'free' not in line:
                     del freed_vars[freed_var]
-                    # Track new malloc if applicable
                     if 'malloc' in line or 'calloc' in line or 'realloc' in line:
                         malloc_vars.add(freed_var)
     
     def _detect_double_free(self):
         """Detect double free vulnerabilities"""
-        freed_vars = {}  # var_name -> line_number
+        freed_vars = {}
         
         for line_num, line in enumerate(self.lines, 1):
-            # Skip comments
             if re.match(r'^\s*//', line):
                 continue
             
-            # Detect free() calls
             free_match = re.search(r'free\s*\(\s*(\w+)\s*\)', line)
             if free_match:
                 var_name = free_match.group(1)
                 
                 if var_name in freed_vars:
-                    # Double free detected!
                     function_name = self._get_enclosing_function(line_num)
                     first_free = freed_vars[var_name]
                     
@@ -636,7 +581,6 @@ class PointerSafetyAnalyzer:
                 else:
                     freed_vars[var_name] = line_num
             
-            # Reset on reassignment
             for var_name in list(freed_vars.keys()):
                 if re.search(rf'{var_name}\s*=(?!=)', line) and 'free' not in line:
                     del freed_vars[var_name]
@@ -644,11 +588,10 @@ class PointerSafetyAnalyzer:
     def _detect_null_pointer_deref(self):
         """Detect potential null pointer dereferences"""
         for line_num, line in enumerate(self.lines, 1):
-            # Look for pointer dereferences
             deref_patterns = [
-                r'(\w+)\s*->',  # ptr->member
-                r'\*\s*(\w+)',   # *ptr
-                r'(\w+)\s*\['    # ptr[index]
+                r'(\w+)\s*->',
+                r'\*\s*(\w+)',
+                r'(\w+)\s*\['
             ]
             
             for pattern in deref_patterns:
@@ -656,7 +599,6 @@ class PointerSafetyAnalyzer:
                 if match:
                     var_name = match.group(1)
                     
-                    # Check if there's null check nearby
                     context_lines = self._get_surrounding_lines(line_num, 5)
                     has_null_check = any(
                         re.search(rf'{var_name}\s*(!= NULL|== NULL|!{var_name})', ctx)
@@ -664,7 +606,6 @@ class PointerSafetyAnalyzer:
                     )
                     
                     if not has_null_check:
-                        # Check if pointer comes from malloc/calloc
                         is_from_alloc = any(
                             re.search(rf'{var_name}\s*=\s*(malloc|calloc)', ctx)
                             for ctx in context_lines
@@ -729,14 +670,12 @@ class FormatStringDetector:
         
         for line_num, line in enumerate(self.lines, 1):
             for func in format_functions:
-                # Look for calls with variable as first format argument
                 pattern = rf'{func}\s*\(\s*(\w+)\s*\)'
                 match = re.search(pattern, line)
                 
                 if match:
                     var_name = match.group(1)
                     
-                    # Check if it's not a string literal
                     if not re.search(rf'{func}\s*\(\s*"', line):
                         function_name = self._get_enclosing_function(line_num)
                         
@@ -784,14 +723,11 @@ class ArrayBoundsChecker:
         self.content = content
         self.lines = lines
         self.findings = []
-        self.array_sizes = {}  # Track array declarations
+        self.array_sizes = {}
     
     def analyze(self) -> List[VulnerabilityFinding]:
         """Analyze array bounds"""
-        # First pass: find array declarations
         self._find_array_declarations()
-        
-        # Second pass: check array accesses
         self._check_array_accesses()
         
         return self.findings
@@ -799,51 +735,41 @@ class ArrayBoundsChecker:
     def _find_array_declarations(self):
         """Find array declarations and their sizes"""
         for line in self.lines:
-            # Match: type array_name[size] - but not in a type declaration context
-            # More specific pattern to avoid matching in struct definitions
             match = re.search(r'\b(int|char|float|double|long|short)\s+(\w+)\s*\[\s*(\d+)\s*\]\s*[;=]', line)
             if match:
                 array_name = match.group(2)
                 array_size = int(match.group(3))
                 self.array_sizes[array_name] = array_size
             
-            # Also match struct member arrays
             match = re.search(r'\bchar\s+(\w+)\s*\[\s*(\d+)\s*\]\s*;', line)
             if match:
                 array_name = match.group(1)
                 array_size = int(match.group(2))
-                # Store struct member sizes too
                 self.array_sizes[array_name] = array_size
     
     def _check_array_accesses(self):
         """Check for out-of-bounds array accesses"""
         for line_num, line in enumerate(self.lines, 1):
-            # Skip if this line is a declaration
             if re.search(r'\b(int|char|float|double|long|short|struct)\s+\w+\s*\[\s*\d+\s*\]', line):
                 continue
             
-            # Find array accesses
             for array_name, array_size in self.array_sizes.items():
-                # Match: array[index] but NOT in declarations
                 pattern = rf'\b{array_name}\s*\[\s*(\d+|0x[0-9a-fA-F]+)\s*\]'
                 matches = re.finditer(pattern, line)
                 
                 for match in matches:
-                    # Double-check this isn't part of a declaration
                     line_before_match = line[:match.start()]
                     if re.search(r'\b(int|char|float|double|long|short|struct)\s+$', line_before_match):
                         continue
                     
                     index_str = match.group(1)
                     
-                    # Parse index
                     try:
                         if index_str.startswith('0x'):
                             index = int(index_str, 16)
                         else:
                             index = int(index_str)
                         
-                        # Check if out of bounds
                         if index >= array_size:
                             function_name = self._get_enclosing_function(line_num)
                             
@@ -861,15 +787,12 @@ class ArrayBoundsChecker:
                                 cwe_id="CWE-125"
                             ))
                     except ValueError:
-                        pass  # Not a constant index
+                        pass
                 
-                # Check for loop-based accesses without bounds checking
                 if f'{array_name}[' in line and ('for' in line or 'while' in line):
-                    # Skip if line is a declaration
                     if re.search(r'\b(int|char|float|double|long|short|struct)\s+', line):
                         continue
                     
-                    # Check if loop has bounds check
                     context = self._get_surrounding_lines(line_num, 3)
                     has_bounds_check = any(
                         re.search(rf'<\s*{array_size}|<=\s*{array_size-1}', ctx)
@@ -929,9 +852,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s scan vulnerable.c
-  %(prog)s scan src/ --recursive
-  %(prog)s scan main.c --confidence 0.8 --output report.json
+  cscan scan vulnerable.c
+  cscan scan src/ --recursive
+  cscan scan main.c --confidence 0.8 --output report.json
         """
     )
     
@@ -950,10 +873,8 @@ Examples:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Initialize scanner
     scanner = CSourceScanner(confidence_threshold=args.confidence)
     
-    # Scan target
     if os.path.isfile(args.target):
         findings = scanner.scan_file(args.target)
     elif os.path.isdir(args.target):
@@ -962,7 +883,6 @@ Examples:
         print(f"Error: {args.target} not found")
         return 1
     
-    # Print results
     print(f"\n{'='*60}")
     print(f"SCAN RESULTS")
     print(f"{'='*60}")
@@ -974,12 +894,10 @@ Examples:
         print("VULNERABILITIES FOUND:")
         print(f"{'='*60}\n")
         
-        # Group by severity
         by_severity = defaultdict(list)
         for finding in findings:
             by_severity[finding.severity].append(finding)
         
-        # Print in severity order
         for severity in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']:
             if severity in by_severity:
                 print(f"\n{severity} SEVERITY ({len(by_severity[severity])} findings):")
@@ -999,7 +917,6 @@ Examples:
     else:
         print("\n✅ No vulnerabilities found!")
     
-    # Generate report
     if args.output:
         report_file = scanner.generate_report(args.output)
         print(f"\n📊 Detailed report saved to: {report_file}")

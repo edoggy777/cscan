@@ -1,87 +1,72 @@
-C Source Code Vulnerability Scanner
+CScan – C Source Code Vulnerability Scanner
+===========================================
 
-A static analysis tool that detects memory safety and security vulnerabilities in C source code. 
-Identifies buffer overflows, memory leaks, use-after-free bugs, null pointer dereferences, format string vulnerabilities, and array bounds violations.
-Provides detailed reports with exact line numbers, code snippets, and remediation recommendations.
-Designed for security researchers, developers, and bug bounty hunters analyzing C programs.
+CScan is a command-line tool for analyzing C source code for memory safety
+and security vulnerabilities, including buffer overflows, memory leaks,
+use-after-free, null pointer dereferences, format string vulnerabilities,
+and array bounds violations.
 
-Quick Usage
+Features
+--------
 
-Scan a single C file
-python3 c_scanner.py scan vulnerable.c
-
-Scan a directory recursively
-python3 c_scanner.py scan src/ --recursive
-
-Generate JSON report
-python3 c_scanner.py scan program.c --output report.json
-
-Adjust confidence threshold (0.0-1.0)
-python3 c_scanner.py scan code.c --confidence 0.85
-
-Verbose output
-python3 c_scanner.py scan file.c --verbose
-
-What It Detects
-
-| Vulnerability Type | Severity | Example |
-|-------------------|----------|---------|
-| Buffer Overflow | CRITICAL | `strcpy()`, `gets()`, `sprintf()` |
-| Memory Leak | HIGH | `malloc()` without `free()` |
-| Use After Free | CRITICAL | Using pointer after `free()` |
-| Double Free | CRITICAL | Calling `free()` twice on same pointer |
-| Null Pointer Deref | HIGH | Dereferencing without NULL check |
-| Format String | HIGH | `printf(user_input)` |
-| Array Out of Bounds | HIGH | Accessing beyond array size |
+- Scan single C files or entire directories recursively
+- Detects high-risk vulnerabilities with confidence scoring
+- Generates detailed JSON reports
+- CLI flags for custom confidence thresholds and output files
+- Supports verbose output for debugging
 
 Installation
+------------
 
-**Requirements**: Python 3.8+
+Install via PyPI (or TestPyPI for testing):
 
-No additional dependencies required
-python3 c_scanner.py scan --help
-```
+    pip install cscan
 
-Example Output
+Usage
+-----
 
-```
-============================================================
-SCAN RESULTS
-============================================================
-Files analyzed: 1
-Vulnerabilities found: 8
+Scan a single file:
 
-CRITICAL SEVERITY (3 findings):
+    cscan scan vulnerable.c
+
+Scan a directory recursively with custom confidence threshold:
+
+    cscan scan src/ --recursive --confidence 0.8 --output report.json
+
+Enable verbose output:
+
+    cscan scan src/ -v
+
+Output
+------
+
+- Prints vulnerabilities to the terminal, grouped by severity
+- Generates JSON report (if --output specified) with:
+  - Metadata (scan time, scanner version, files analyzed)
+  - Findings (detailed per-vulnerability information)
+  - Summary statistics by severity, type, and file
+
+Example
+-------
+
+CRITICAL SEVERITY (2 findings):
 ------------------------------------------------------------
-
-[Buffer Overflow] vulnerable.c:12
-Function: unsafe_copy
-Confidence: 85%
-Description: Unsafe function 'strcpy()': Unsafe string copy without bounds checking
-Recommendation: Use strncpy() or strlcpy() with proper size limits
+[Buffer Overflow] example.c:42
+Function: copy_input
+Confidence: 100%
+Description: Unsafe function 'strcpy()' without bounds checking
+Recommendation: Use strncpy() with proper size limits
 CWE: CWE-120
 
-Code:
-      10 | void unsafe_copy(char* input) {
-      11 |     char buffer[100];
->>>   12 |     strcpy(buffer, input);
-      13 |     printf("%s\n", buffer);
-      14 | }
-
-[Use After Free] vulnerable.c:28
-Function: memory_bug
+[Use After Free] example.c:78
+Function: cleanup
 Confidence: 85%
 Description: Variable 'ptr' used after being freed
-Recommendation: Set pointer to NULL after free() and check before use
+Recommendation: Set pointer to NULL after free()
 CWE: CWE-416
 
-Code:
-      26 |     free(ptr);
-      27 |     
->>>   28 |     strcpy(ptr, "data");
-      29 | }
-```
+License
+-------
 
-## Test File
+MIT License © 2025 Evan Kirtz
 
-python3 c_scanner.py scan vuln.c
