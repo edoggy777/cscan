@@ -1,3 +1,11 @@
+Support
+
+If you find this project helpful, consider supporting it:
+
+**Bitcoin:** `338dgCgrg6Sm1UdP6dCdL6BrNiU7NQjkA7`
+
+[Donate with Bitcoin](bitcoin:338dgCgrg6Sm1UdP6dCdL6BrNiU7NQjkA7)
+
 CScan – C Source Code Vulnerability Scanner
 ===========================================
 
